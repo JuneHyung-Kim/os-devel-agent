@@ -6,6 +6,9 @@
 - 기본: Symbol + BM25 하이브리드
 - 인덱스: JSONL + pickle + 메타(json)
 
+## Install
+pip install -e .
+
 ## Build
 python -m code_agent.cli build --repo /path/to/repo --data ./data_repo
 

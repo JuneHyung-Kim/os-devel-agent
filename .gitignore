@@ -1,0 +1,9 @@
+# Python bytecode cache
+__pycache__/
+*.py[cod]
+
+# Python packaging artifacts
+*.egg-info/
+
+# Index files
+data_repo/
