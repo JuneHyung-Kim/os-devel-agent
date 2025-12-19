@@ -53,7 +53,8 @@ def temp_db():
     """Create a temporary database directory"""
     temp_dir = tempfile.mkdtemp()
     yield temp_dir
-    shutil.rmtree(temp_dir)
+    # Windows: ChromaDB may lock files, use ignore_errors
+    shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def test_index_sample_project(sample_project, temp_db):

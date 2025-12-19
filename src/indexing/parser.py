@@ -115,7 +115,20 @@ class CodeParser:
         if child_by_field:
             return code[child_by_field.start_byte:child_by_field.end_byte]
         
-        # Fallback for C++ where name might be complex or nested
+        # For C/C++ functions, the declarator contains the function name
+        declarator = node.child_by_field_name('declarator')
+        if declarator:
+            # The declarator might itself have a declarator (pointer declarations)
+            while declarator.child_by_field_name('declarator'):
+                declarator = declarator.child_by_field_name('declarator')
+            # Now get the identifier from this declarator
+            if declarator.type == 'identifier':
+                return code[declarator.start_byte:declarator.end_byte]
+            for child in declarator.children:
+                if child.type == 'identifier':
+                    return code[child.start_byte:child.end_byte]
+        
+        # Fallback for complex cases
         for child in node.children:
             if child.type in ['identifier', 'type_identifier', 'field_identifier']:
                  return code[child.start_byte:child.end_byte]

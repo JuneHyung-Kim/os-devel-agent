@@ -4,35 +4,85 @@ from chromadb.utils import embedding_functions
 import os
 from typing import List, Dict, Any
 from utils.logger import logger
+from config import config
 
 class VectorStore:
     def __init__(self, collection_name="code_chunks", persist_path="./db"):
         logger.info(f"Initializing vector store at {persist_path}")
         self.client = chromadb.PersistentClient(path=persist_path)
         
-        openai_key = os.getenv("OPENAI_API_KEY")
-        gemini_key = os.getenv("GEMINI_API_KEY")
+        # Get embedding function based on configuration
+        self.ef = self._get_embedding_function()
         
-        if openai_key:
-            logger.info("Using OpenAI Embeddings (text-embedding-3-small)")
-            self.ef = embedding_functions.OpenAIEmbeddingFunction(
-                api_key=openai_key,
-                model_name="text-embedding-3-small"
+        # Try to get or create collection, handle embedding function conflicts
+        try:
+            self.collection = self.client.get_or_create_collection(
+                name=collection_name,
+                embedding_function=self.ef
             )
-        elif gemini_key:
+        except ValueError as e:
+            if "embedding function" in str(e).lower() and "conflict" in str(e).lower():
+                logger.warning(f"Embedding function conflict detected. Deleting old collection '{collection_name}'...")
+                try:
+                    self.client.delete_collection(name=collection_name)
+                    logger.info(f"Deleted old collection. Creating new one with current embedding function...")
+                    self.collection = self.client.create_collection(
+                        name=collection_name,
+                        embedding_function=self.ef
+                    )
+                except Exception as delete_err:
+                    logger.error(f"Failed to delete/recreate collection: {delete_err}")
+                    raise
+            else:
+                raise
+    
+    def _get_embedding_function(self):
+        """Get embedding function based on EMBEDDING_PROVIDER configuration."""
+        provider = config.embedding_provider
+        
+        if provider == "openai":
+            logger.info(f"Using OpenAI Embeddings ({config.embedding_model})")
+            config.validate_embedding_config()
+            return embedding_functions.OpenAIEmbeddingFunction(
+                api_key=config.openai_api_key,
+                model_name=config.embedding_model
+            )
+        
+        elif provider == "gemini":
             logger.info("Using Gemini Embeddings")
-            self.ef = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
-                api_key=gemini_key
+            config.validate_embedding_config()
+            return embedding_functions.GoogleGenerativeAiEmbeddingFunction(
+                api_key=config.gemini_api_key
             )
+        
+        elif provider == "ollama":
+            logger.info(f"Using Ollama Embeddings ({config.embedding_model} at {config.ollama_base_url})")
+            try:
+                # Ollama uses OpenAI-compatible API
+                import chromadb.utils.embedding_functions as ef
+                return ef.OllamaEmbeddingFunction(
+                    url=f"{config.ollama_base_url}/api/embeddings",
+                    model_name=config.embedding_model
+                )
+            except AttributeError:
+                # Fallback: use custom implementation if ChromaDB doesn't have OllamaEmbeddingFunction
+                logger.warning("ChromaDB doesn't have built-in Ollama support. Using custom implementation.")
+                from utils.ollama_embedding import OllamaEmbeddingFunction
+                return OllamaEmbeddingFunction(
+                    base_url=config.ollama_base_url,
+                    model_name=config.embedding_model
+                )
+        
+        elif provider == "default":
+            logger.info("Using default embeddings (Sentence Transformers)")
+            logger.warning("Default embeddings are slower and may have lower quality.")
+            logger.warning("For better results, set EMBEDDING_PROVIDER to 'openai', 'gemini', or 'ollama'")
+            return embedding_functions.DefaultEmbeddingFunction()
+        
         else:
-            logger.warning("No API key found. Using default embeddings (Sentence Transformers)")
-            logger.warning("For better results, set OPENAI_API_KEY or GEMINI_API_KEY in .env")
-            self.ef = embedding_functions.DefaultEmbeddingFunction()
-            
-        self.collection = self.client.get_or_create_collection(
-            name=collection_name,
-            embedding_function=self.ef
-        )
+            raise ValueError(f"Unknown EMBEDDING_PROVIDER: {provider}")
+            else:
+                raise
 
     def add_documents(self, documents: List[str], metadatas: List[Dict[str, Any]], ids: List[str]):
         if not documents:

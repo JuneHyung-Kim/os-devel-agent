@@ -11,41 +11,65 @@ from tools.search_tool import SearchTool
 class CodeAgent:
     def __init__(self):
         self.search_tool = SearchTool()
-        self.provider = config.model_provider
+        self.provider = config.chat_provider
+        
+        config.validate_chat_config()
         
         if self.provider == "openai":
-            if not config.openai_api_key:
-                raise ValueError("OPENAI_API_KEY is not set.")
-            self.client = OpenAI(api_key=config.openai_api_key)
-            self.model_name = config.model_name
-            self.tools = [self.search_tool.get_tool_definition()]
-            self.messages = [
-                {"role": "system", "content": "You are an expert AI software engineer. You have access to a codebase and can search it to answer questions. Always verify your assumptions by searching the code. When answering, reference specific files and lines if possible."}
-            ]
+            self._init_openai()
         elif self.provider == "gemini":
-            if not config.gemini_api_key:
-                raise ValueError("GEMINI_API_KEY is not set.")
-            genai.configure(api_key=config.gemini_api_key)
-            
-            # Map the function directly for Gemini
-            self.tools = [self.search_tool.search_codebase]
-            
-            system_instruction = "You are an expert AI software engineer. You have access to a codebase and can search it to answer questions. Always verify your assumptions by searching the code. When answering, reference specific files and lines if possible."
-            
-            self.model = genai.GenerativeModel(
-                model_name=config.model_name if config.model_name != "gpt-4o" else "gemini-1.5-flash",
-                tools=self.tools,
-                system_instruction=system_instruction
-            )
-            self.chat_session = self.model.start_chat(enable_automatic_function_calling=True)
+            self._init_gemini()
+        elif self.provider == "ollama":
+            self._init_ollama()
         else:
-            raise ValueError(f"Unsupported provider: {self.provider}")
+            raise ValueError(f"Unsupported chat provider: {self.provider}")
+    
+    def _init_openai(self):
+        """Initialize OpenAI client."""
+        self.client = OpenAI(api_key=config.openai_api_key)
+        self.model_name = config.chat_model
+        self.tools = [self.search_tool.get_tool_definition()]
+        self.messages = [
+            {"role": "system", "content": "You are an expert AI software engineer. You have access to a codebase and can search it to answer questions. Always verify your assumptions by searching the code. When answering, reference specific files and lines if possible."}
+        ]
+    
+    def _init_gemini(self):
+        """Initialize Gemini client."""
+        genai.configure(api_key=config.gemini_api_key)
+        
+        # Map the function directly for Gemini
+        self.tools = [self.search_tool.search_codebase]
+        
+        system_instruction = "You are an expert AI software engineer. You have access to a codebase and can search it to answer questions. Always verify your assumptions by searching the code. When answering, reference specific files and lines if possible."
+        
+        self.model = genai.GenerativeModel(
+            model_name=config.chat_model,
+            tools=self.tools,
+            system_instruction=system_instruction
+        )
+        self.chat_session = self.model.start_chat(enable_automatic_function_calling=True)
+    
+    def _init_ollama(self):
+        """Initialize Ollama client using OpenAI-compatible API."""
+        from openai import OpenAI as OllamaClient
+        
+        self.client = OllamaClient(
+            base_url=f"{config.ollama_base_url}/v1",
+            api_key="ollama"  # Ollama doesn't require real API key
+        )
+        self.model_name = config.chat_model
+        self.tools = [self.search_tool.get_tool_definition()]
+        self.messages = [
+            {"role": "system", "content": "You are an expert AI software engineer. You have access to a codebase and can search it to answer questions. Always verify your assumptions by searching the code. When answering, reference specific files and lines if possible."}
+        ]
 
     def chat(self, user_input: str) -> str:
         if self.provider == "openai":
             return self._chat_openai(user_input)
         elif self.provider == "gemini":
             return self._chat_gemini(user_input)
+        elif self.provider == "ollama":
+            return self._chat_ollama(user_input)
 
     def _chat_openai(self, user_input: str) -> str:
         self.messages.append({"role": "user", "content": user_input})
@@ -84,9 +108,13 @@ class CodeAgent:
             return response.text
         except Exception as e:
             return f"Error communicating with Gemini: {str(e)}"
+    
+    def _chat_ollama(self, user_input: str) -> str:
+        """Chat using Ollama (same as OpenAI since Ollama uses OpenAI-compatible API)."""
+        return self._chat_openai(user_input)
 
     def reset(self):
-        if self.provider == "openai":
+        if self.provider in ["openai", "ollama"]:
             self.messages = [
                 {"role": "system", "content": "You are an expert AI software engineer. You have access to a codebase and can search it to answer questions. Always verify your assumptions by searching the code. When answering, reference specific files and lines if possible."}
             ]

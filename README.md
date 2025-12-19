@@ -23,7 +23,13 @@ pip install -e .
 
 # 2. Configure
 cp .env.example .env
-# Edit .env: add GEMINI_API_KEY or OPENAI_API_KEY
+# Edit .env: Configure embedding and chat models
+# See .env.example for all options
+
+# Example configurations:
+# - All local (Ollama): EMBEDDING_PROVIDER=ollama, CHAT_PROVIDER=ollama
+# - Cloud only: EMBEDDING_PROVIDER=openai, CHAT_PROVIDER=openai  
+# - Hybrid: EMBEDDING_PROVIDER=default, CHAT_PROVIDER=ollama
 
 # 3. Use
 python src/main.py index /path/to/code
