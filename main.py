@@ -13,7 +13,7 @@ from indexing.storage.vector_store import get_vector_store
 from indexing.storage.graph_store import get_graph_store
 from profiling.builder import ProfileBuilder
 from profiling.synthesizer import synthesize_profile
-from profiling.profile_store import save_profile, reset_profile_cache
+from profiling.profile_store import save_profile, load_profile, reset_profile_cache
 from agent.model import APICallCancelled
 from agent.core import CodeAgent
 
@@ -46,20 +46,38 @@ def main():
     print("\n[2/4] Building codebase profile...")
     start_time = time.time()
     try:
+        # Load existing profile first so we can preserve LLM-generated content
+        existing_profile = load_profile()
+
         vector_store = get_vector_store()
         graph_store = get_graph_store()
         builder = ProfileBuilder(vector_store, graph_store, project_path)
         profile = builder.build()
+
+        # Carry over AI-generated summaries from the existing profile.
+        # This prevents redundant (and costly) LLM calls for unchanged files.
+        if existing_profile:
+            existing_summaries = {
+                fm.relative_path: fm.summary
+                for fm in existing_profile.module_map
+                if fm.summary
+            }
+            for fm in profile.module_map:
+                if fm.summary is None and fm.relative_path in existing_summaries:
+                    fm.summary = existing_summaries[fm.relative_path]
+            if existing_profile.ai_summary:
+                profile.ai_summary = existing_profile.ai_summary
+
         print(f"  Profile built in {time.time() - start_time:.2f}s")
         print(f"  Files: {profile.total_files}, Symbols: {profile.total_symbols}")
     except Exception as e:
         print(f"  Profile build failed: {e}")
         return
 
-    # --- Phase 3: AI synthesis (first LLM call — confirmation may trigger) ---
+    # --- Phase 3: AI synthesis (incremental — only for missing summaries) ---
     use_llm = os.environ.get("CODE_RAG_LLM_INIT", "").lower() in ("1", "true", "yes")
     if use_llm:
-        print("\n[3/4] Generating AI synthesis (two-step)...")
+        print("\n[3/4] Generating AI synthesis (incremental)...")
         try:
             synthesize_profile(profile)
         except APICallCancelled:
@@ -78,7 +96,6 @@ def main():
         print("  Profile saved to ./db/")
     except Exception as e:
         print(f"  Profile save failed: {e}")
-
     # --- Agent Initialization ---
     print("\nInitializing Agent...")
     try:

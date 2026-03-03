@@ -94,9 +94,13 @@ def _step1_module_summaries(profile: CodebaseProfile) -> int:
     """Generate per-file summaries. Returns count of files summarized."""
     count = 0
 
-    # First pass: trivial files (no LLM needed)
+    # First pass: files that already have a summary (preserved from prior run) or
+    # can be described deterministically without an LLM call.
     non_trivial: List[FileSummary] = []
     for fm in profile.module_map:
+        if fm.summary is not None:
+            count += 1
+            continue
         trivial = _trivial_summary(fm)
         if trivial is not None:
             fm.summary = trivial
@@ -221,16 +225,19 @@ def synthesize_profile(profile: CodebaseProfile) -> CodebaseProfile:
         logger.warning(f"Step 1 (module summaries) failed: {e}")
         print(f"  Module summaries failed: {e}")
 
-    # Step 2: Architecture summary
-    try:
-        summary = _step2_architecture_summary(profile)
-        if summary:
-            profile.ai_summary = summary
-            print("  Architecture summary generated.")
-        else:
-            print("  Architecture summary empty.")
-    except Exception as e:
-        logger.warning(f"Step 2 (architecture summary) failed: {e}")
-        print(f"  Architecture summary failed: {e}")
+    # Step 2: Architecture summary — skip if already present from a prior run
+    if profile.ai_summary:
+        print("  Architecture summary reused from existing profile.")
+    else:
+        try:
+            summary = _step2_architecture_summary(profile)
+            if summary:
+                profile.ai_summary = summary
+                print("  Architecture summary generated.")
+            else:
+                print("  Architecture summary empty.")
+        except Exception as e:
+            logger.warning(f"Step 2 (architecture summary) failed: {e}")
+            print(f"  Architecture summary failed: {e}")
 
     return profile
