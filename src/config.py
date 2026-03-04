@@ -40,6 +40,12 @@ class AgentConfig:
             
         self.project_root = os.getenv("PROJECT_ROOT", "./")
         self.confirm_api_calls = os.getenv("CONFIRM_API_CALLS", "true").lower() == "true"
+
+        # Observability (local trace, no LangSmith required)
+        self.trace_enabled = os.getenv("TRACE_ENABLED", "true").lower() == "true"
+        self.trace_dir = os.getenv("TRACE_DIR", "./logs/traces")
+        self.trace_console = os.getenv("TRACE_CONSOLE", "true").lower() == "true"
+        self.trace_color = os.getenv("TRACE_COLOR", "true").lower() == "true"
     
     def validate_embedding_config(self) -> None:
         """Validate embedding configuration."""

@@ -1,9 +1,10 @@
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from config import config
 from agent.graph import define_graph
 from agent.state import empty_working_memory
+from utils.callback_handler import AgentTraceCallback
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,14 +30,29 @@ class CodeAgent:
             "iteration_count": 0,
         }
 
+        tracer: Optional[AgentTraceCallback] = None
+        run_config: Dict[str, Any] = {"recursion_limit": 150}
+
+        if config.trace_enabled:
+            tracer = AgentTraceCallback(
+                trace_dir=config.trace_dir,
+                stream_to_console=config.trace_console,
+                color=config.trace_color,
+            )
+            run_config["callbacks"] = [tracer]
+
         try:
-            final_state = self.app.invoke(inputs, config={"recursion_limit": 150})
+            final_state = self.app.invoke(inputs, config=run_config)
             response = final_state.get("response", "I could not generate a response.")
             return response
 
         except Exception as e:
             logger.error(f"Error during agent execution: {e}", exc_info=True)
             return f"An error occurred: {str(e)}"
+
+        finally:
+            if tracer:
+                tracer.close()
 
     def reset(self):
         pass
