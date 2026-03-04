@@ -129,7 +129,7 @@ EMBEDDING_PROVIDER=default  # ChromaDB's Sentence Transformers
 CHAT_PROVIDER=ollama
 ```
 
-**Chat providers**: `gemini` and `ollama` (see `agent/model.py:get_model()`)
+**Chat providers**: `gemini`, `claude`, `ollama`, `openai` (see `agent/model.py:get_model()`)
 **Embedding providers**: `gemini`, `ollama`, `default` (ChromaDB's Sentence Transformers)
 
 ## Incremental Indexing
@@ -161,6 +161,9 @@ File registry tracks SHA1 hashes per project. On re-index:
 1. Create tool class in `src/tools/`
 2. Register in `ToolRegistry._register_builtins()` (`agent/tools.py`) with handler
 3. For advanced routing, replace heuristics with LLM-based tool selection
+
+### New Dependency
+When adding a new `import` that requires an external package, always add the package to `pyproject.toml` `[project.dependencies]` (or `[project.optional-dependencies].dev` for dev-only tools). Do not rely on manual `pip install` instructions alone.
 
 ## Debugging
 
