@@ -41,19 +41,45 @@ class GraphStore:
 
         return list(neighbors)
 
+    def _resolve_nodes_by_name(self, function_name: str) -> List[str]:
+        """Find node IDs matching a function name.
+
+        Supports exact match, qualified suffix match (``Foo::bar`` ends with ``::bar``),
+        and unqualified short-name match against the stored ``name`` attribute.
+        """
+        # Normalise: strip leading `this->` / `self.` patterns that the parser may emit
+        lookup = function_name
+        for prefix in ("this->", "self."):
+            if lookup.startswith(prefix):
+                lookup = lookup[len(prefix):]
+
+        short_name = lookup.split("::")[-1]  # last component after last "::"
+
+        matched = []
+        for n, data in self.graph.nodes(data=True):
+            node_name = data.get("name", "")
+            if not node_name:
+                continue
+            if node_name == lookup:
+                matched.append(n)
+            elif node_name.endswith(f"::{lookup}"):
+                # caller passed a short name; stored node is qualified
+                matched.append(n)
+            elif lookup.endswith(f"::{node_name}") or lookup == node_name:
+                # caller passed a qualified name; stored node is short
+                matched.append(n)
+            elif node_name == short_name and short_name != lookup:
+                # fallback: unqualified match
+                matched.append(n)
+        return matched
+
     def get_callers(self, function_name: str) -> List[Dict[str, Any]]:
         """
         Find functions that call the given function.
         Returns list of caller info with node attributes.
         """
         callers = []
-        # Find nodes matching the function name
-        target_nodes = [
-            n for n in self.graph.nodes()
-            if n.endswith(f":{function_name}") or n == function_name
-        ]
-
-        for target in target_nodes:
+        for target in self._resolve_nodes_by_name(function_name):
             for caller in self.graph.predecessors(target):
                 node_data = self.graph.nodes.get(caller, {})
                 callers.append({
@@ -70,13 +96,7 @@ class GraphStore:
         Returns list of callee info with node attributes.
         """
         callees = []
-        # Find nodes matching the function name
-        source_nodes = [
-            n for n in self.graph.nodes()
-            if n.endswith(f":{function_name}") or n == function_name
-        ]
-
-        for source in source_nodes:
+        for source in self._resolve_nodes_by_name(function_name):
             for callee in self.graph.successors(source):
                 node_data = self.graph.nodes.get(callee, {})
                 callees.append({
@@ -102,11 +122,7 @@ class GraphStore:
         """
         max_depth = min(max_depth, 10)
 
-        # Resolve starting nodes
-        start_nodes = [
-            n for n in self.graph.nodes()
-            if n.endswith(f":{function_name}") or n == function_name
-        ]
+        start_nodes = self._resolve_nodes_by_name(function_name)
         if not start_nodes:
             return []
 

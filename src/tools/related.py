@@ -67,9 +67,20 @@ class RelatedCodeTool:
         )
 
         if not chain:
+            # Surface diagnostic: list candidate node names that partially match
+            gs = self.graph_store
+            candidates = [
+                data.get("name", "")
+                for _, data in gs.graph.nodes(data=True)
+                if function_name.split("::")[-1] in data.get("name", "")
+            ][:10]
+            hint = (
+                f" Similar symbols in graph: {candidates}" if candidates else ""
+            )
             return (
                 f"No call chain found for '{function_name}' "
-                f"(direction={direction}). The function may not be indexed."
+                f"(direction={direction}). The function may not be indexed or "
+                f"has no {direction}.{hint}"
             )
 
         lines = [

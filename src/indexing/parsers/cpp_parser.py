@@ -345,13 +345,26 @@ class CppParser:
         calls = set()
         if not self._call_query:
             return []
-        
+
         cursor = QueryCursor(self._call_query)
         captures = cursor.captures(node)
-        
+
         for captured_node, _ in self._iter_captures(captures):
-            text = self._get_text(captured_node, code)
-            if text:
-                calls.add(text)
-        
+            text = self._get_text(captured_node, code).strip()
+            if not text:
+                continue
+            # Normalise common indirect-call patterns so resolve_edges can match them:
+            #   this->method   → method
+            #   self.method    → method
+            #   obj->method    → method  (keep obj.method too for field-expr tracking)
+            for prefix in ("this->", "self."):
+                if text.startswith(prefix):
+                    text = text[len(prefix):]
+                    break
+            # field_expression: "expr->method" or "expr.method"
+            # Keep only the member name so the graph can resolve it to a definition.
+            if "->" in text:
+                text = text.rsplit("->", 1)[-1]
+            calls.add(text)
+
         return list(calls)

@@ -51,13 +51,18 @@ class GraphStrategy(BaseStrategy):
         """Resolve bare-name call edges to real node IDs after all files are indexed."""
         graph = self.graph_store.graph
 
-        # Build name → [node_id] lookup from nodes that have a file_path
+        # Build name → [node_id] lookup from nodes that have a file_path.
+        # Also track short_name (last component after "::") for fuzzy fallback.
         name_to_ids: Dict[str, List[str]] = defaultdict(list)
+        short_to_ids: Dict[str, List[str]] = defaultdict(list)
         for node_id, data in graph.nodes(data=True):
             if data.get("file_path"):
                 name = data.get("name", "")
                 if name:
                     name_to_ids[name].append(node_id)
+                    short = name.split("::")[-1]
+                    if short != name:
+                        short_to_ids[short].append(node_id)
 
         # Find all calls_by_name edges
         edges_to_remove = []
@@ -65,8 +70,18 @@ class GraphStrategy(BaseStrategy):
         for u, v, data in graph.edges(data=True):
             if data.get("type") != "calls_by_name":
                 continue
-            # v is a bare function name
-            targets = name_to_ids.get(v, [])
+            # v may be a bare name, a qualified name, or "this->method" / "obj.method"
+            # Normalise: strip object prefix patterns
+            lookup = v
+            for prefix in ("this->", "self."):
+                if lookup.startswith(prefix):
+                    lookup = lookup[len(prefix):]
+
+            targets = name_to_ids.get(lookup, [])
+            if not targets:
+                # Try unqualified short-name fallback
+                short = lookup.split("::")[-1]
+                targets = short_to_ids.get(short, []) or name_to_ids.get(short, [])
             if targets:
                 edges_to_remove.append((u, v))
                 for target_id in targets:
